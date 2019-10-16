@@ -52,7 +52,19 @@ class S3MHandlersAnalysisDifferentMergesCollector implements DataCollector {
 
         if(semistructuredMergeResultsAreDifferent(legacyHandlerMergeFiles, currentHandlerMergeFiles)) {
             storeScenario(project, mergeCommit, mergeScenario, legacyHandlerMergeFiles, currentHandlerMergeFiles, handler)
+        } else if(differentFromExistingMerge(project, mergeScenario, currentHandlerMergeFiles)) {
+            storeFile(project, mergeCommit, mergeScenario, currentHandlerMergeFiles)
         }
+    }
+
+    private void storeFile(Project project, MergeCommit mergeCommit, Tuple4<Path, Path, Path, Path> mergeScenario, Tuple2<Path, Path> currentHandlerMergeFiles) {
+        Path filePath = Paths.get(MiningFramework.arguments.getOutputPath(), project.getName(), mergeCommit.getSHA(), "differentFromExisting", mergeScenario.getV4().toString())
+        filePath.getParent().toFile().mkdirs()
+        Files.copy(currentHandlerMergeFiles.getV2(), filePath, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private boolean differentFromExistingMerge(Project project, Tuple4<Path, Path, Path, Path> mergeScenario, Tuple2<Path, Path> currentHandlerMergeFiles) {
+        return StringUtils.deleteWhitespace(currentHandlerMergeFiles.getV2().text) != StringUtils.deleteWhitespace(Paths.get(project.getPath(), mergeScenario.getV4().toString()).text)
     }
 
     private boolean semistructuredMergeResultsAreDifferent(Tuple2<Path, Path> legacyHandlerMergeFiles, Tuple2<Path, Path> currentHandlerMergeFiles) {
@@ -93,7 +105,7 @@ class S3MHandlersAnalysisDifferentMergesCollector implements DataCollector {
 
     private List<Tuple4<Path, Path, Path, Path>> retrieveMergeScenarios(Project project, MergeCommit mergeCommit) {
         List<Tuple4<Path, Path, Path, Path>> mergeScenarios = new ArrayList<>()
-        for(String changedFile in getJavaChangedFiles(project, mergeCommit)) {
+        for(String changedFile in getJavaFiles(project, mergeCommit)) {
             Path leftFile = getFilePath(project, changedFile, mergeCommit.getLeftSHA())
             Path baseFile = getFilePath(project, changedFile, mergeCommit.getAncestorSHA())
             Path rightFile = getFilePath(project, changedFile, mergeCommit.getRightSHA())
@@ -120,11 +132,11 @@ class S3MHandlersAnalysisDifferentMergesCollector implements DataCollector {
         return fileContent.toString()
     }
 
-    private List<String> getJavaChangedFiles(Project project, MergeCommit mergeCommit) {
+    private List<String> getJavaFiles(Project project, MergeCommit mergeCommit) {
         List<String> changedFiles = new ArrayList<>();
-        Process gitDiffTree = ProcessRunner.runProcess(project.getPath(), "git", "diff-tree", "--no-commit-id", "--name-status", "-r", mergeCommit.getSHA(), mergeCommit.getAncestorSHA())
+        Process gitDiffTree = ProcessRunner.runProcess(project.getPath(), "git", "ls-tree", "--name-only", "-r", mergeCommit.getSHA())
         gitDiffTree.getInputStream().eachLine {
-            if(isModifiedFile(it) && isJavaFile(it)) {
+            if(isJavaFile(it)) {
                 changedFiles.add(getFilePath(it))
             }
         }
@@ -141,6 +153,6 @@ class S3MHandlersAnalysisDifferentMergesCollector implements DataCollector {
 
     private String getFilePath(String gitDiffTreeLine) {
         // M         name.extension
-        return gitDiffTreeLine.substring(1).trim()
+        return gitDiffTreeLine
     }
 }
