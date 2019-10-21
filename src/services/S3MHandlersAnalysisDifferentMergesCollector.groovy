@@ -58,13 +58,18 @@ class S3MHandlersAnalysisDifferentMergesCollector implements DataCollector {
     }
 
     private void storeFile(Project project, MergeCommit mergeCommit, Tuple4<Path, Path, Path, Path> mergeScenario, Tuple2<Path, Path> currentHandlerMergeFiles) {
-        Path filePath = Paths.get(MiningFramework.arguments.getOutputPath(), project.getName(), mergeCommit.getSHA(), "differentFromExisting", mergeScenario.getV4().toString())
-        filePath.getParent().toFile().mkdirs()
-        Files.copy(currentHandlerMergeFiles.getV2(), filePath, StandardCopyOption.REPLACE_EXISTING)
+        Path fileDirectory = Paths.get(MiningFramework.arguments.getOutputPath(), project.getName(), mergeCommit.getSHA(), mergeScenario.getV4().toString())
+        fileDirectory.toFile().mkdirs()
+
+        Files.copy(currentHandlerMergeFiles.getV1(), fileDirectory.resolve("semistructured.java"), StandardCopyOption.REPLACE_EXISTING)
+        Files.copy(currentHandlerMergeFiles.getV2(), fileDirectory.resolve("unstructured.java"), StandardCopyOption.REPLACE_EXISTING)
+        Files.move(mergeScenario.getV1(), fileDirectory.resolve("left.java"), StandardCopyOption.REPLACE_EXISTING)
+        Files.move(mergeScenario.getV2(), fileDirectory.resolve("base.java"), StandardCopyOption.REPLACE_EXISTING)
+        Files.move(mergeScenario.getV3(), fileDirectory.resolve("right.java"), StandardCopyOption.REPLACE_EXISTING)
     }
 
     private boolean differentFromExistingMerge(Project project, Tuple4<Path, Path, Path, Path> mergeScenario, Tuple2<Path, Path> currentHandlerMergeFiles) {
-        return StringUtils.deleteWhitespace(currentHandlerMergeFiles.getV2().text) != StringUtils.deleteWhitespace(Paths.get(project.getPath(), mergeScenario.getV4().toString()).text)
+        return StringUtils.deleteWhitespace(currentHandlerMergeFiles.getV2().text) != StringUtils.deleteWhitespace(currentHandlerMergeFiles.getV1().text)
     }
 
     private boolean semistructuredMergeResultsAreDifferent(Tuple2<Path, Path> legacyHandlerMergeFiles, Tuple2<Path, Path> currentHandlerMergeFiles) {

@@ -47,14 +47,16 @@ class S3MHandlersAnalysisConflictAnalyser implements DataCollector {
                 analyseConflicts(project, mergeCommit, differentHandlersResults)
             }
             threads.each { it.join() }
+            updateSpreadsheet(project, mergeCommit, mergeCommitOutputPath)
             pushResults(mergeCommitOutputPath)
         }
     }
 
-    void pushResults(Path mergeCommitOutputPath) {
-        String legacyHandlerBuildConflictsSummary = getBuildConflictsSummary()
-        FileUtils.writeStringToFile(mergeCommitOutputPath.getParent().resolve("buildConflicts.txt").toFile(), legacyHandlerBuildConflictsSummary, Charset.defaultCharset())
+    private static void updateSpreadsheet(Project project, MergeCommit mergeCommit, Path mergeCommitOutputPath) {
+        SpreadsheetBuilder.buildSpreadsheet(Paths.get(MiningFramework.arguments.getOutputPath()).resolve("results.csv"), project, mergeCommit, mergeCommitOutputPath)
+    }
 
+    void pushResults(Path mergeCommitOutputPath) {
         FileUtils.copyDirectoryToDirectory(mergeCommitOutputPath.getParent().toFile(), TO_PUSH_REPOSITORY.resolve("handlers-comparison/results").toFile())
 
         Process process = ProcessRunner.runProcess(TO_PUSH_REPOSITORY.toString(), "git", "add", ".")
@@ -65,25 +67,9 @@ class S3MHandlersAnalysisConflictAnalyser implements DataCollector {
         process.getInputStream().eachLine {}
         process.waitFor()
 
-        process = ProcessRunner.runProcess(TO_PUSH_REPOSITORY.toString(), "git", "push")
+        process = ProcessRunner.runProcess(TO_PUSH_REPOSITORY.toString(), "git", "push", "--force")
         process.getInputStream().eachLine {}
         process.waitFor()
-    }
-
-    private String getBuildConflictsSummary() {
-        StringBuilder output = new StringBuilder()
-        output.append(getBuildConflictsSummary("legacy handler", TravisCommunicator.legacyHandlerErrors))
-        output.append(getBuildConflictsSummary("current handler", TravisCommunicator.currentHandlerErrors))
-        return output.toString()
-    }
-
-    private String getBuildConflictsSummary(String handlerVersion, List<String> erroredFilePaths) {
-        StringBuilder summary = new StringBuilder()
-        summary.append("Number of ${handlerVersion} build conflicts: ${erroredFilePaths.size()}\n")
-        erroredFilePaths.each { erroredFilePath ->
-            summary.append(erroredFilePath).append('\n')
-        }
-        return summary.toString()
     }
 
     private void analyseConflicts(Project project, MergeCommit mergeCommit, Tuple2<Path, Path> differentHandlersResults) {
@@ -128,17 +114,14 @@ class S3MHandlersAnalysisConflictAnalyser implements DataCollector {
     }
 
     private static void replaceDifferentFromExistingFiles(Project project, MergeCommit mergeCommit) {
-        Path differentFromExistingDirectoryPath = Paths.get(MiningFramework.arguments.getOutputPath(), project.getName(), mergeCommit.getSHA(), "differentFromExisting")
-        if(Files.exists(differentFromExistingDirectoryPath)) {
-            differentFromExistingDirectoryPath.traverse(type: FILES, nameFilter: ~/.*\.java/) {
-                Files.copy(it, Paths.get(project.getPath()).resolve(differentFromExistingDirectoryPath.relativize(it)), StandardCopyOption.REPLACE_EXISTING)
-            }
+        Path filesPath = Paths.get(MiningFramework.arguments.getOutputPath(), project.getName(), mergeCommit.getSHA())
+        filesPath.traverse(type: FILES, nameFilter: ~/semistructured\.java/) {
+            Files.copy(it, Paths.get(project.getPath()).resolve(filesPath.relativize(it)), StandardCopyOption.REPLACE_EXISTING)
         }
-
     }
 
     private static void pushBranch(Project project, String branchName) {
-        Process gitPush = ProcessRunner.runProcess(project.getPath(), 'git', 'push', '-u', 'origin', branchName)
+        Process gitPush = ProcessRunner.runProcess(project.getPath(), 'git', 'push', '--force', '-u', 'origin', branchName)
         gitPush.getInputStream().eachLine { println it }
         gitPush.waitFor()
     }
@@ -161,7 +144,7 @@ class S3MHandlersAnalysisConflictAnalyser implements DataCollector {
         gitCheckout.waitFor()
     }
 
-    private static List<MergeConflict> extractMergeConflicts(Path file) {
+    static List<MergeConflict> extractMergeConflicts(Path file) {
         List<MergeConflict> mergeConflicts = new ArrayList<MergeConflict>()
 
         StringBuilder leftConflictingContent = new StringBuilder()
